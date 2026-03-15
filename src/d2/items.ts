@@ -280,7 +280,7 @@ export async function readItem(
       }
     }
     if (version === 105) {
-      reader.SkipBits(1);
+      item._unknown_data.v105_post_durability_bit = reader.ReadBit();
     }
 
     if (constants.stackables[item.type]) {
@@ -327,7 +327,7 @@ export async function readItem(
     }
   }
   if (version === 105 && reader.ReadBit()) {
-      reader.SkipBits(8);
+      item.quantity = reader.ReadUInt8(8);
   }
   reader.Align();
 
@@ -449,6 +449,9 @@ export async function writeItem(
       }
     }
 
+    if (version === 105) {
+      writer.WriteBit(item._unknown_data?.v105_post_durability_bit ?? 0);
+    }
     if (constants.stackables[item.type]) {
       writer.WriteUInt16(item.quantity, 9);
     }
@@ -476,6 +479,14 @@ export async function writeItem(
     }
   }
 
+  if (version === 105) {
+    if (item.quantity !== undefined && item.quantity > 1) {
+      writer.WriteBit(1);
+      writer.WriteUInt8(item.quantity, 8);
+    } else {
+      writer.WriteBit(0);
+    }
+  }
   writer.Align();
 
   if (item.nr_of_items_in_sockets > 0 && item.simple_item === 0) {
