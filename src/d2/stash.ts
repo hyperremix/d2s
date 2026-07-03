@@ -26,10 +26,20 @@ export async function read(
     let pageCount = 0;
     while (reader.offset < reader.bits.length) {
       pageCount++;
+      const sectorStart = reader.offset;
       await readStashHeader(stash, reader);
       const saveVersion = version || parseInt(stash.version);
       if (!constants) {
         constants = getConstantData(saveVersion);
+      }
+      // RotW adds non-item sectors (e.g. the currency tab) that have no JM
+      // item list; skip them wholesale using the sector size from the header.
+      const bodyStart = reader.offset;
+      const marker = reader.ReadString(2);
+      reader.SeekBit(bodyStart);
+      if (marker !== "JM" && stash.sectorSize) {
+        reader.SeekBit(sectorStart + stash.sectorSize * 8);
+        continue;
       }
       await readStashPart(stash, reader, saveVersion, constants);
     }
@@ -54,7 +64,7 @@ async function readStashHeader(stash: types.IStash, reader: BitReader) {
       stash.hardcore = reader.ReadUInt32() == 0;
       stash.version = reader.ReadUInt32().toString();
       stash.sharedGold = reader.ReadUInt32();
-      reader.ReadUInt32(); // size of the sector
+      stash.sectorSize = reader.ReadUInt32();
       reader.SkipBytes(44); // empty
       break;
     // LoD

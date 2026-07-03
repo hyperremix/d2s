@@ -420,6 +420,7 @@ export interface IStash {
   type: EStashType;
   pageCount: number;
   sharedGold: number;
+  sectorSize?: number;
   hardcore: boolean;
   pages: IStashPage[];
 }
