@@ -32121,6 +32121,23 @@ export let constants =
         "Miscellaneous"
       ]
     },
+    "cs2": {
+      "iq": 0,
+      "n": "Crafted Sunder Charm",
+      "hi": 0,
+      "gt": 0,
+      "i": "invsst",
+      "iw": 1,
+      "ih": 3,
+      "it": 0,
+      "ig": [],
+      "eq1n": "Charm",
+      "c": [
+        "Grand Charm",
+        "Charm",
+        "Miscellaneous"
+      ]
+    },
     "cm3": {
       "iq": 0,
       "n": "Grand Charm",
@@ -33555,6 +33572,30 @@ export let constants =
             "max": 1
           }
         ]
+      ]
+    },
+    "cjw": {
+      "iq": 0,
+      "n": "Colossal Jewel",
+      "hi": 0,
+      "gt": 0,
+      "i": "invgswe",
+      "iw": 1,
+      "ih": 1,
+      "it": 0,
+      "ig": [
+        "invjw1",
+        "invjw2",
+        "invjw3",
+        "invjw4",
+        "invjw5",
+        "invjw6"
+      ],
+      "eq1n": "Socket Filler",
+      "c": [
+        "Jewel",
+        "Socket Filler",
+        "Miscellaneous"
       ]
     },
     "jew": {
