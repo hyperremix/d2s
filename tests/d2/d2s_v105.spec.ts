@@ -120,6 +120,23 @@ describe("d2s v105 (Reign of the Warlock)", () => {
     expect(output[27]).to.eq(2);
   });
 
+  it("should keep the stack count field of items as read and not add one to a moved tome", async () => {
+    const original = load("Roka.d2s");
+    const save = await read(original, constants);
+    const tome = save.items.find((item) => item.type === "ibk" && item.location_id === 0) as types.IItem;
+    expect(tome._unknown_data.v105_stack_count_flag).to.eq(0);
+    expect(tome.quantity).to.be.greaterThan(1);
+    tome.position_x = tome.position_x === 0 ? 1 : 0;
+
+    const output = await write(save, constants);
+    const reread = await read(output, constants);
+
+    expect(output.length).to.eq(original.length);
+    const rereadTome = reread.items.find((item) => item.type === "ibk" && item.location_id === 0) as types.IItem;
+    expect(rereadTome.quantity).to.eq(tome.quantity);
+    expect(rereadTome._unknown_data.v105_stack_count_flag).to.eq(0);
+  });
+
   it("should refuse to write a v105 save without its header bytes", async () => {
     const save = await read(load("Warlock_v105.d2s"), constants);
     delete save._unknown_data!.v105_header;

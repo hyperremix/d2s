@@ -336,6 +336,7 @@ export async function readItem(
     item._unknown_data.v105_stack_count_flag = reader.ReadBit();
     if (item._unknown_data.v105_stack_count_flag) {
       item.quantity = reader.ReadUInt8(8);
+      item._unknown_data.v105_stack_count = item.quantity;
     }
   }
   reader.Align();
@@ -507,16 +508,20 @@ export async function writeItem(
 }
 
 /**
- * Whether a v105 item carries the trailing 8-bit stack count. Stackables with their own 9-bit
- * quantity field (tomes, keys, arrows) only carry it when they were read with it; other items carry
- * it when they were read with it or hold more than one unit.
+ * Whether a v105 item carries the trailing 8-bit stack count. An item whose count did not change
+ * since it was read keeps the field as read (the game also writes it with a count of 0 or 1, for
+ * example for socketed runes). A stackable with its own 9-bit quantity field (tomes, keys, arrows)
+ * that was read without the field does not gain it. Otherwise items with more than one unit carry it.
  */
 function _hasV105StackCount(item: types.IItem, constants: types.IConstantData): boolean {
-  const readWithStackCount = item._unknown_data?.v105_stack_count_flag === 1;
-  if (!item.simple_item && constants.stackables[item.type]) {
-    return readWithStackCount;
+  const flag = item._unknown_data?.v105_stack_count_flag;
+  if (flag === 1 && item.quantity === item._unknown_data?.v105_stack_count) {
+    return true;
   }
-  return item.quantity !== undefined && (item.quantity > 1 || readWithStackCount);
+  if (flag === 0 && !item.simple_item && constants.stackables[item.type]) {
+    return false;
+  }
+  return item.quantity !== undefined && item.quantity > 1;
 }
 
 function _readSimpleBits(item: types.IItem, reader: BitReader, version: number, constants: types.IConstantData, config: types.IConfig) {

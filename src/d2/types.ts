@@ -409,6 +409,7 @@ export interface IItem {
     plist_flag?: number;
     v105_post_durability_bit?: number;
     v105_stack_count_flag?: number;
+    v105_stack_count?: number;
     runeword_unknown?: number;
   };
   rare_name_id: number;
