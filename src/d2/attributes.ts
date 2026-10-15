@@ -48,6 +48,13 @@ export async function readAttributes(char: types.ID2S, reader: BitReader, consta
     char.attributes[Attributes[field.s]] = reader.ReadUInt32(size);
     //current_hp - max_stamina need to be bit shifted
     if (id >= 6 && id <= 11) {
+      // keep the fractional low byte so that writing the value back reproduces it
+      const fraction = char.attributes[Attributes[field.s]] & 0xff;
+      if (fraction) {
+        char._unknown_data = char._unknown_data || {};
+        char._unknown_data.attribute_fractions = char._unknown_data.attribute_fractions || {};
+        char._unknown_data.attribute_fractions[Attributes[field.s]] = fraction;
+      }
       char.attributes[Attributes[field.s]] >>>= 8;
     }
     bitoffset += size;
@@ -71,7 +78,7 @@ export async function writeAttributes(char: types.ID2S, constants: types.IConsta
     }
     const size = property.cB;
     if (i >= 6 && i <= 11) {
-      value <<= 8;
+      value = ((value << 8) | ((char._unknown_data?.attribute_fractions?.[Attributes[property.s]] || 0) & 0xff)) >>> 0;
     }
     writer.WriteUInt16(i, 9);
     writer.WriteUInt32(value, size);

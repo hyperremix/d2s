@@ -31,6 +31,28 @@ export interface ID2S {
   merc_items: IItem[];
   golem_item: IItem;
   is_dead: number;
+  /**
+   * Bytes the reader does not model, kept so that writing a save back reproduces them exactly.
+   * Only filled for the formats whose writer needs them (see each field).
+   */
+  _unknown_data?: ID2SUnknownData;
+}
+
+export interface ID2SUnknownData {
+  /**
+   * v105: the whole fixed-size header (file offset 0 up to the attributes section). The writer
+   * starts from these bytes and only overwrites the bytes whose modeled fields changed.
+   */
+  v105_header?: Uint8Array;
+  /** Fractional low byte of the life, mana and stamina attributes, by attribute name. */
+  attribute_fractions?: { [attribute: string]: number };
+  /** The 12 bytes in front of the first corpse's item list (unknown, x and y position). */
+  corpse_header?: Uint8Array;
+  /**
+   * v105: every byte after the last item section (for Reign of the Warlock saves the "lf" demon
+   * section), written back unchanged.
+   */
+  v105_trailing?: Uint8Array;
 }
 
 export interface IAttributes {
@@ -285,6 +307,12 @@ export interface IHeader {
   merc_name_id: number;
   merc_type: number;
   merc_experience: number;
+  /**
+   * v105+: game mode byte at file offset 0xf8 (1 = classic, 2 = Lord of Destruction,
+   * 3 = Reign of the Warlock). v105 saves signal expansion through this byte instead of the
+   * expansion status bit.
+   */
+  game_mode?: number;
 }
 
 export interface IStatus {
@@ -380,6 +408,8 @@ export interface IItem {
     b27_31?: Uint8Array;
     plist_flag?: number;
     v105_post_durability_bit?: number;
+    v105_stack_count_flag?: number;
+    runeword_unknown?: number;
   };
   rare_name_id: number;
   rare_name_id2: number;

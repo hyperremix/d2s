@@ -1,6 +1,7 @@
 import * as types from "../types";
 import { BitReader } from "../../binary/bitreader";
 import { BitWriter } from "../../binary/bitwriter";
+import { toBytes } from "../raw_bytes";
 
 const difficulties = ["normal", "nm", "hell"];
 
@@ -65,9 +66,19 @@ export function readHeader(char: types.ID2S, reader: BitReader, constants: types
   reader.SkipBytes(2); //0x02c9 [npc header identifier  = 0x01, 0x77 ".w"]
   reader.SkipBytes(2); //0x02ca [npc header length = 0x34]
   char.header.npcs = _readNPCData(reader.ReadArray(0x30)); //0x02cc
+  if (char.header.version == V105) {
+    _readV105Extras(char, reader);
+  }
 }
 
 export function writeHeader(char: types.ID2S, writer: BitWriter, constants: types.IConstantData) {
+  if (char.header.version == V105) {
+    writer.WriteArray(_writeV105Header(char, constants).subarray(8));
+    return;
+  }
+  if (char.header.version > 0x63) {
+    throw new Error(`Cannot write version: ${char.header.version}`);
+  }
   writer
     .WriteUInt32(0x0) //0x0008 (filesize. needs to be writen after all data)
     .WriteUInt32(0x0); //0x000c (checksum. needs to be calculated after all data writer)
@@ -128,6 +139,103 @@ export function writeHeader(char: types.ID2S, writer: BitWriter, constants: type
     .WriteArray(new Uint8Array([0x01, 0x77])) //0x02c9 [npc header = 0x01, 0x77 ".w"]
     .WriteUInt16(0x34) //0x02ca [npc struct length]
     .WriteArray(_writeNPCData(char.header.npcs)); //0x02cc [npc introduction data... unk]
+}
+
+/**
+ * Reign of the Warlock (v105) header layout. The fixed-size header ends where the attributes
+ * section starts (offset 833); see halbu (feored/halbu, src/character/v105.rs and
+ * src/format/layout.rs) and D2SSharp (ResurrectedTrader/D2SSharp) for the layout.
+ */
+const V105 = 0x69;
+const V105_HEADER_LENGTH = 833;
+const V105_GAME_MODE_OFFSET = 248;
+
+/**
+ * Keeps the game mode byte and the raw header bytes of a v105 save. The reader leaves the end of
+ * the header at the current position.
+ */
+function _readV105Extras(char: types.ID2S, reader: BitReader) {
+  const end = reader.offset;
+  if (end !== V105_HEADER_LENGTH * 8) {
+    throw new Error(`v105 header ended at byte ${end / 8}, expected ${V105_HEADER_LENGTH}`);
+  }
+  char.header.game_mode = reader.SeekByte(V105_GAME_MODE_OFFSET).ReadUInt8();
+  char._unknown_data = char._unknown_data || {};
+  char._unknown_data.v105_header = reader.SeekByte(0).ReadArray(V105_HEADER_LENGTH);
+  reader.SeekBit(end);
+}
+
+/**
+ * Writes every modeled header field at its v105 offset over zeroed bytes. Fields the model does
+ * not keep (unknown regions, quest bits the reader skips) are left zero, so this is only used to
+ * find out which header bytes changed, see `_writeV105Header`.
+ */
+function _encodeV105HeaderFields(header: types.IHeader, constants: types.IConstantData): Uint8Array {
+  const writer = new BitWriter(V105_HEADER_LENGTH * 8);
+  writer.length = V105_HEADER_LENGTH * 8;
+  writer
+    .SeekByte(20)
+    .WriteArray(_writeStatus(header.status))
+    .WriteUInt8(header.progression)
+    .WriteUInt16(header.active_arms)
+    .WriteUInt8(_classId(header.class, constants))
+    .SeekByte(27)
+    .WriteUInt8(header.level)
+    .WriteUInt32(header.created)
+    .WriteUInt32(header.last_played)
+    .SeekByte(40)
+    .WriteArray(_writeAssignedSkills(header.assigned_skills, constants))
+    .WriteUInt32(_skillId(header.left_skill, constants))
+    .WriteUInt32(_skillId(header.right_skill, constants))
+    .WriteUInt32(_skillId(header.left_swap_skill, constants))
+    .WriteUInt32(_skillId(header.right_swap_skill, constants))
+    .WriteArray(_writeCharMenuAppearance(header.menu_appearance, constants))
+    .WriteArray(_writeDifficulty(header.difficulty))
+    .WriteUInt32(header.map_id)
+    .SeekByte(161)
+    .WriteUInt16(header.dead_merc)
+    .WriteUInt32(parseInt(header.merc_id, 16))
+    .WriteUInt16(header.merc_name_id)
+    .WriteUInt16(header.merc_type)
+    .WriteUInt32(header.merc_experience)
+    .SeekByte(V105_GAME_MODE_OFFSET)
+    .WriteUInt8(header.game_mode || 0)
+    .SeekByte(299)
+    .WriteString(header.name, 16)
+    .SeekByte(413)
+    .WriteArray(_writeQuests(header.quests_normal))
+    .WriteArray(_writeQuests(header.quests_nm))
+    .WriteArray(_writeQuests(header.quests_hell))
+    .SeekByte(709)
+    .WriteArray(_writeWaypointData(header.waypoints))
+    .SeekByte(785)
+    .WriteArray(_writeNPCData(header.npcs));
+  return writer.ToArray();
+}
+
+/**
+ * Writes a v105 header. Many v105 header bytes are not understood yet, so the header is never
+ * rebuilt from scratch: the writer starts from the header bytes the save was read from and only
+ * overwrites the bytes whose modeled fields changed since. Unchanged data is written back
+ * byte-identical; the file size and checksum are fixed afterwards by `fixHeader`.
+ */
+function _writeV105Header(char: types.ID2S, constants: types.IConstantData): Uint8Array {
+  const raw = toBytes(char._unknown_data?.v105_header);
+  if (!raw || raw.length !== V105_HEADER_LENGTH) {
+    throw new Error("Cannot write a v105 character save without the header bytes it was read from");
+  }
+  const original = { header: { version: V105 } } as types.ID2S;
+  readHeader(original, new BitReader(raw).SeekByte(8), constants);
+
+  const before = _encodeV105HeaderFields(original.header, constants);
+  const after = _encodeV105HeaderFields(char.header, constants);
+  const output = Uint8Array.from(raw);
+  for (let i = 8; i < V105_HEADER_LENGTH; i++) {
+    if (after[i] !== before[i]) {
+      output[i] = after[i];
+    }
+  }
+  return output;
 }
 
 function _classId(name: string, constants: types.IConstantData): number {

@@ -1,6 +1,7 @@
 import * as types from "./types";
 import { BitReader } from "../binary/bitreader";
 import { BitWriter } from "../binary/bitwriter";
+import { toBytes } from "./raw_bytes";
 
 enum ItemType {
   Armor = 0x01,
@@ -104,7 +105,11 @@ export async function readCorpseItems(char: types.ID2S, reader: BitReader, const
   }
   char.is_dead = reader.ReadUInt16(); //0x0002 [corpse count]
   for (let i = 0; i < char.is_dead; i++) {
-    reader.SkipBytes(12); //0x0004 [unk4, x_pos, y_pos]
+    const corpseHeader = reader.ReadArray(12); //0x0004 [unk4, x_pos, y_pos]
+    if (i === 0) {
+      char._unknown_data = char._unknown_data || {};
+      char._unknown_data.corpse_header = corpseHeader;
+    }
     char.corpse_items = char.corpse_items.concat(await readItems(reader, char.header.version, constants, config, char));
   }
 }
@@ -115,7 +120,8 @@ export async function writeCorpseItem(char: types.ID2S, constants: types.IConsta
   writer.WriteUInt16(char.is_dead);
   //json struct doesnt support multiple corpses without modifying it
   if (char.is_dead) {
-    writer.WriteArray(new Uint8Array(12));
+    const corpseHeader = toBytes(char._unknown_data?.corpse_header);
+    writer.WriteArray(corpseHeader && corpseHeader.length === 12 ? corpseHeader : new Uint8Array(12));
     char.corpse_items = char.corpse_items || [];
     writer.WriteArray(await writeItems(char.corpse_items, char.header.version, constants, config));
   }
@@ -244,7 +250,7 @@ export async function readItem(
       if (constants.runewords[item.runeword_id]) {
         item.runeword_name = constants.runewords[item.runeword_id]!.n!;
       }
-      reader.ReadUInt8(4);
+      item._unknown_data.runeword_unknown = reader.ReadUInt8(4);
     }
 
     if (item.personalized) {
@@ -326,8 +332,11 @@ export async function readItem(
       }
     }
   }
-  if (version === 105 && reader.ReadBit()) {
+  if (version === 105) {
+    item._unknown_data.v105_stack_count_flag = reader.ReadBit();
+    if (item._unknown_data.v105_stack_count_flag) {
       item.quantity = reader.ReadUInt8(8);
+    }
   }
   reader.Align();
 
@@ -415,7 +424,7 @@ export async function writeItem(
         runeword_id = 48;
       }
       writer.WriteUInt16(runeword_id, 12);
-      writer.WriteUInt8(5, 4); //always 5?
+      writer.WriteUInt8(item._unknown_data.runeword_unknown ?? 5, 4); //5 unless read otherwise
     }
 
     if (item.personalized) {
@@ -480,7 +489,7 @@ export async function writeItem(
   }
 
   if (version === 105) {
-    if (item.quantity !== undefined && item.quantity > 1) {
+    if (_hasV105StackCount(item, constants)) {
       writer.WriteBit(1);
       writer.WriteUInt8(item.quantity, 8);
     } else {
@@ -495,6 +504,19 @@ export async function writeItem(
     }
   }
   return writer.ToArray();
+}
+
+/**
+ * Whether a v105 item carries the trailing 8-bit stack count. Stackables with their own 9-bit
+ * quantity field (tomes, keys, arrows) only carry it when they were read with it; other items carry
+ * it when they were read with it or hold more than one unit.
+ */
+function _hasV105StackCount(item: types.IItem, constants: types.IConstantData): boolean {
+  const readWithStackCount = item._unknown_data?.v105_stack_count_flag === 1;
+  if (!item.simple_item && constants.stackables[item.type]) {
+    return readWithStackCount;
+  }
+  return item.quantity !== undefined && (item.quantity > 1 || readWithStackCount);
 }
 
 function _readSimpleBits(item: types.IItem, reader: BitReader, version: number, constants: types.IConstantData, config: types.IConfig) {

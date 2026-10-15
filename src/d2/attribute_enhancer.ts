@@ -69,7 +69,9 @@ export function enhanceItem(item: types.IItem, constants: types.IConstantData, l
   if (constants.armor_items[item.type]) {
     details = constants.armor_items[item.type];
     item.type_id = ItemType.Armor;
-    if (details.maxac) {
+    // Defense and durability read from the save are the item's own values; base values are only
+    // filled in for items that have none, so writing an item back does not reset them.
+    if (details.maxac && item.defense_rating === undefined) {
       if (item.ethereal == 0) {
         item.defense_rating = details.maxac;
       } else if (item.ethereal == 1) {
@@ -106,7 +108,7 @@ export function enhanceItem(item: types.IItem, constants: types.IConstantData, l
     if (details.it) item.inv_transform = details.it;
     if (details.iq) item.item_quality = details.iq;
     if (details.c) item.categories = details.c;
-    if (details.durability) {
+    if (details.durability && item.max_durability === undefined) {
       if (item.ethereal == 0) {
         item.current_durability = details.durability;
         item.max_durability = details.durability;

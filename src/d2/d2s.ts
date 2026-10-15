@@ -7,11 +7,26 @@ import { readSkills, writeSkills } from "./skills";
 import * as items from "./items";
 import { getConstantData } from "./constants";
 import { enhanceAttributes, enhanceItems } from "./attribute_enhancer";
+import { toBytes } from "./raw_bytes";
 
 const defaultConfig = {
   extendedStash: false,
   sortProperties: true,
 } as types.IConfig;
+
+const V105 = 0x69;
+
+/**
+ * True when the save has the expansion sections (mercenary and iron golem items) after the corpse.
+ * v105 saves signal this with their game mode byte (2 = Lord of Destruction, 3 = Reign of the
+ * Warlock) and do not need to set the expansion status bit; older saves use the status bit.
+ */
+function hasExpansionSections(header: types.IHeader): boolean {
+  if (header.version === V105) {
+    return (header.game_mode || 0) > 1;
+  }
+  return header.status.expansion;
+}
 
 function reader(buffer: Uint8Array) {
   return new BitReader(buffer);
@@ -31,9 +46,15 @@ async function read(buffer: Uint8Array, constants?: types.IConstantData, userCon
   await readSkills(char, reader, constants);
   await items.readCharItems(char, reader, constants, config);
   await items.readCorpseItems(char, reader, constants, config);
-  if (char.header.status.expansion) {
+  if (hasExpansionSections(char.header)) {
     await items.readMercItems(char, reader, constants, config);
     await items.readGolemItems(char, reader, constants, config);
+  }
+  if (char.header.version === V105) {
+    // Sections after the item lists (the Reign of the Warlock "lf" demon section) are kept as bytes.
+    reader.Align();
+    char._unknown_data = char._unknown_data || {};
+    char._unknown_data.v105_trailing = reader.ReadArray(Math.max(0, (reader.bits.length - reader.offset) / 8));
   }
   await enhanceAttributes(char, constants, config);
   return char;
@@ -71,9 +92,12 @@ async function write(data: types.ID2S, constants?: types.IConstantData, userConf
   writer.WriteArray(await writeSkills(data, constants));
   writer.WriteArray(await items.writeCharItems(data, constants, config));
   writer.WriteArray(await items.writeCorpseItem(data, constants, config));
-  if (data.header.status.expansion) {
+  if (hasExpansionSections(data.header)) {
     writer.WriteArray(await items.writeMercItems(data, constants, config));
     writer.WriteArray(await items.writeGolemItems(data, constants, config));
+  }
+  if (data.header.version === V105 && data._unknown_data?.v105_trailing) {
+    writer.WriteArray(toBytes(data._unknown_data.v105_trailing)!);
   }
   await fixHeader(writer);
   return writer.ToArray();
@@ -94,4 +118,4 @@ async function writeItem(
   return writer.ToArray();
 }
 
-export { reader, writer, read, write, readItem, writeItem };
+export { reader, writer, read, write, readItem, writeItem, hasExpansionSections };
